@@ -236,6 +236,23 @@ public:
 
     uint32 guildRepliesRate;
 
+    // LLM (Ollama) chat
+    bool llmEnabled;
+    std::string llmUrl;
+    std::string llmModel;
+    std::string llmApi; // "chat" (POST /api/chat) or "generate"
+    uint32 llmTimeoutMs;
+    uint32 llmMaxTokens;
+    float llmTemperature;
+    std::string llmSystemPrompt;
+    uint32 llmHistorySize;
+    std::string llmFallbackText;
+    uint32 llmRateLimitPerBotMs;
+    uint32 llmMaxQueue;
+    uint32 llmMaxResponseChars;
+    bool llmEnabledForWhisper;
+    bool llmEnabledForSay;
+
     bool randomBotJoinBG;
     bool randomBotAutoJoinBG;
 

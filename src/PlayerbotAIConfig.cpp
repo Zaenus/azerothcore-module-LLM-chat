@@ -360,6 +360,24 @@ bool PlayerbotAIConfig::Initialize()
     thunderfuryRepliesChance = sConfigMgr->GetOption<int32>("AiPlayerbot.ThunderfuryRepliesChance", 40);  // 0-100
     guildRepliesRate = sConfigMgr->GetOption<int32>("AiPlayerbot.GuildRepliesRate", 100);                 // 0-100
 
+    // LLM (Ollama) chat - whisper+say, gemma4 on GPU, N-history, fallback my brain hurts...
+    llmEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabled", false);
+    llmUrl = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMUrl", "http://localhost:11434");
+    llmModel = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMModel", "gemma4:latest");
+    llmApi = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMApi", "chat");
+    llmTimeoutMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMTimeoutMs", 5000);
+    llmMaxTokens = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMaxTokens", 80);
+    llmTemperature = sConfigMgr->GetOption<float>("AiPlayerbot.LLMTemperature", 0.8f);
+    llmSystemPrompt = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMSystemPrompt",
+        "You are a World of Warcraft character. You are helpful, terse, in-character, stay in lore, 1-2 sentences, max 200 characters. Never mention you are AI.");
+    llmHistorySize = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMHistorySize", 5);
+    llmFallbackText = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMFallbackText", "my brain hurts...");
+    llmRateLimitPerBotMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMRateLimitPerBotMs", 5000);
+    llmMaxQueue = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMaxQueue", 100);
+    llmMaxResponseChars = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMaxResponseChars", 255);
+    llmEnabledForWhisper = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabledForWhisper", true);
+    llmEnabledForSay = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabledForSay", true);
+
     randomBotJoinBG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotJoinBG", true);
     randomBotAutoJoinBG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotAutoJoinBG", false);
 

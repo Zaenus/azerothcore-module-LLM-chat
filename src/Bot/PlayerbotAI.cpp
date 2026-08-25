@@ -1166,9 +1166,6 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
             if (!sPlayerbotAIConfig.randomBotTalk)
                 return;
 
-            if (!AllowActivity())
-                return;
-
             WorldPacket p(packet);
             if (!p.empty() && (p.GetOpcode() == SMSG_MESSAGECHAT || p.GetOpcode() == SMSG_GM_MESSAGECHAT))
             {
@@ -1187,6 +1184,14 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
 
                 if (lang == LANG_ADDON)
                         return;
+
+                if (msgtype == CHAT_MSG_WHISPER)
+                {
+                    LOG_INFO("playerbots", "[LLMDBG] whisper pkt bot={} from={}", bot->GetName(), guid1.ToString());
+                }
+
+                if (msgtype != CHAT_MSG_WHISPER && !AllowActivity())
+                    return;
 
                 if (p.GetOpcode() == SMSG_GM_MESSAGECHAT)
                 {
@@ -1238,36 +1243,43 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
                     if (HasRealPlayerMaster() && guid1 != GetMaster()->GetGUID())
                         return;
 
-                    auto itemIds = GetChatHelper()->ExtractAllItemIds(message);
-                    if (message.starts_with(sPlayerbotAIConfig.toxicLinksPrefix) &&
-                        (itemIds.size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0) &&
-                        sPlayerbotAIConfig.toxicLinksRepliesChance)
+                    // LLM: for whisper+say with gemma4, accept every message (bypass random chance) when LLM enabled
+                    bool isLLMChannel = sPlayerbotAIConfig.llmEnabled &&
+                        ((msgtype == CHAT_MSG_WHISPER && sPlayerbotAIConfig.llmEnabledForWhisper) ||
+                         (msgtype == CHAT_MSG_SAY && sPlayerbotAIConfig.llmEnabledForSay));
+                    if (!isLLMChannel)
                     {
-                        if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
-                            return;
-                    }
-                    else if (itemIds.count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance)
-                    {
-                        if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
-                            return;
-                    }
-                    else
-                    {
-                        if (isFromFreeBot && urand(0, 20))
-                            return;
-
-                        // if (msgtype == CHAT_MSG_GUILD && (!sPlayerbotAIConfig.guildRepliesRate || urand(1, 100) >=
-                        // sPlayerbotAIConfig.guildRepliesRate)) return;
-
-                        if (!isFromFreeBot)
+                        auto itemIds = GetChatHelper()->ExtractAllItemIds(message);
+                        if (message.starts_with(sPlayerbotAIConfig.toxicLinksPrefix) &&
+                            (itemIds.size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0) &&
+                            sPlayerbotAIConfig.toxicLinksRepliesChance)
                         {
-                            if (!isMentioned && urand(0, 4))
+                            if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
+                                return;
+                        }
+                        else if (itemIds.count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance)
+                        {
+                            if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
                                 return;
                         }
                         else
                         {
-                            if (urand(0, 20 + 10 * isMentioned))
+                            if (isFromFreeBot && urand(0, 20))
                                 return;
+
+                            // if (msgtype == CHAT_MSG_GUILD && (!sPlayerbotAIConfig.guildRepliesRate || urand(1, 100) >=
+                            // sPlayerbotAIConfig.guildRepliesRate)) return;
+
+                            if (!isFromFreeBot)
+                            {
+                                if (!isMentioned && urand(0, 4))
+                                    return;
+                            }
+                            else
+                            {
+                                if (urand(0, 20 + 10 * isMentioned))
+                                    return;
+                            }
                         }
                     }
 

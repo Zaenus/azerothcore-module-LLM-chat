@@ -1,84 +1,113 @@
-<p align="center">
-    <a href="https://github.com/mod-playerbots/mod-playerbots/blob/master/README.md">English</a>
-    |
-    <a href="https://github.com/mod-playerbots/mod-playerbots/blob/master/README_CN.md">中文</a>
-    |
-    <a href="https://github.com/mod-playerbots/mod-playerbots/blob/master/README_ES.md">Español</a>
-</p>
+# AzerothCore Module: LLM Chat for Playerbots
 
+Local LLM-powered chat for [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots) via [Ollama](https://ollama.com). Bots reply to whispers (and optionally say) using a local model like `gemma4:latest` — no cloud API, works offline. Ideal for solo/local servers.
 
-<div align="center">
-  <img src="banner.png" alt="Playerbots Banner" width="700px">
-</div>
+## Features
 
-<div align="center">
-    <img src="https://github.com/mod-playerbots/mod-playerbots/actions/workflows/macos_build.yml/badge.svg">
-    <img src="https://github.com/mod-playerbots/mod-playerbots/actions/workflows/core_build.yml/badge.svg">
-    <img src="https://github.com/mod-playerbots/mod-playerbots/actions/workflows/windows_build.yml/badge.svg">
-</div>
+- **Whisper + Say** via Ollama `/api/chat` (or `/api/generate`)
+- Per-bot conversation history (`LLMHistorySize`)
+- 100% hit rate for LLM channels (bypasses random reply chance)
+- Per-bot rate limit (`LLMRateLimitPerBotMs`)
+- Fallback text (`my brain hurts...`) on timeout/error
+- Single worker thread, queued requests (`LLMMaxQueue`), async delivery on world thread
 
-# Playerbots Module
-`mod-playerbots` is an [AzerothCore](https://www.azerothcore.org/) module that adds player-like bots to a server. The project is based off [IKE3's Playerbots](https://github.com/ike3/mangosbot).
+## Requirements
 
-Features include:
+- AzerothCore (WotLK 3.3.5a) with `mod-playerbots` built (`-DMODULES=static`)
+- Ollama running locally: https://ollama.com
+- Model pulled: `ollama pull gemma4:latest` (or `gemma4-64k:latest`, `qwen`, etc.)
+- `gemma4` reports capabilities `["completion","tools","thinking"]` — `"think":false` is sent
 
-- The ability to log in alt characters as bots, allowing players to interact with their other characters, form parties, level up, and more
-- Random bots that wander through the world, complete quests, and otherwise behave like players, simulating the MMO experience
-- Bots capable of running most raids and battlegrounds
-- Highly configurable settings to define how bots behave
-- Excellent performance, even when running thousands of bots
+## Install
 
-We also have a **[Discord server](https://discord.gg/NQm5QShwf9)** where you can discuss the project, ask questions, and get involved in the community!
-
-## Installation
-
-Supported platforms are Ubuntu, Windows, and macOS. Other Linux distributions may work, but may not receive support.
-
-> **Important:** All `mod-playerbots` installations require a custom fork of AzerothCore: [mod-playerbots/azerothcore-wotlk (Playerbot branch)](https://github.com/mod-playerbots/azerothcore-wotlk/tree/Playerbot). The standard AzerothCore repository will **not** work.
-
-### Quick Start
-
+1. **Ollama**
 ```bash
-git clone https://github.com/mod-playerbots/azerothcore-wotlk.git --branch=Playerbot
-cd azerothcore-wotlk/modules
-git clone https://github.com/mod-playerbots/mod-playerbots.git --branch=master
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve &
+ollama pull gemma4:latest
+curl http://localhost:11434/api/tags  # verify
 ```
 
-Then build the server following the platform-specific instructions in our **[Installation Guide](https://github.com/mod-playerbots/mod-playerbots/wiki/Installation-Guide)**.
+2. **Module**
 
-> **Testing branch:** A `test-staging` branch is available with the latest features and fixes before they are merged into `master`. To use it, clone with `--branch=test-staging` instead. Note that this branch may contain unstable or breaking changes — use it at your own risk and only if you are comfortable troubleshooting issues.
+This repo is a fork of `mod-playerbots` with LLM patches. Copy to your AzerothCore modules:
 
-### Detailed Guides
+```bash
+cp -r azerothcore-module-LLM-chat /path/to/azerothcore/modules/mod-playerbots
+# or clone directly as mod-playerbots
+```
 
-| Guide | Description |
-|---|---|
-| **[Installation Guide](https://github.com/mod-playerbots/mod-playerbots/wiki/Installation-Guide)** | Full step-by-step instructions for clean installs, migrating from existing AzerothCore, Docker setup, adding modules, and updating |
-| **[Troubleshooting](https://github.com/mod-playerbots/mod-playerbots/wiki/Troubleshooting)** | Solutions to the most common build errors, database issues, configuration mistakes, crashes, and platform-specific problems |
+Or apply the three patched files to an existing `mod-playerbots`:
+- `src/Mgr/Ollama/OllamaChatService.h` / `.cpp` (new)
+- `src/Bot/PlayerbotAI.cpp` (SMSG_MESSAGECHAT whisper bypass)
+- `src/Script/Playerbots.cpp` (whisper → ChatReplyDo)
+- `src/PlayerbotAIConfig.h` / `.cpp` + `conf/playerbots.conf.dist` (LLM options)
 
-For additional references, see the [AzerothCore Installation Guide](https://www.azerothcore.org/wiki/installation) and [Installing a Module](https://www.azerothcore.org/wiki/installing-a-module) pages.
+3. **Build**
+```bash
+mkdir -p build && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/azeroth-server -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMODULES=static -DSCRIPTS=static
+cmake --build . -j$(nproc) --target worldserver
+cmake --install .
+cp $HOME/azeroth-server/bin/worldserver /path/to/wowserver/server/bin/worldserver
+```
 
-## Documentation
+## Configuration
 
-The [Playerbots Wiki](https://github.com/mod-playerbots/mod-playerbots/wiki) contains an extensive overview of AddOns, commands, raids with programmed bot strategies, and recommended performance configurations. Please note that documentation may be incomplete or out-of-date in some sections, and contributions are welcome.
+In `etc/modules/playerbots.conf` (the one under your **install prefix** `CMAKE_INSTALL_PREFIX/etc/modules/`, not just `wowserver/server/etc`):
 
-Bots are controlled via chat commands. For larger bot groups, this can be cumbersome. Because of this, community members have developed client AddOns to allow controlling bots through the in-game UI. We recommend you check out their projects listed in the [AddOns and Submodules](https://github.com/mod-playerbots/mod-playerbots/wiki/Playerbot-Addons-and-Sub%E2%80%90Modules) page.
+```ini
+AiPlayerbot.LLMEnabled = 1
+AiPlayerbot.LLMUrl = "http://localhost:11434"
+AiPlayerbot.LLMModel = "gemma4:latest"
+AiPlayerbot.LLMApi = "chat"  # "chat" = POST /api/chat, "generate" = /api/generate
+AiPlayerbot.LLMTimeoutMs = 60000  # 60s for first model load (then 5-10s is fine)
+AiPlayerbot.LLMMaxTokens = 80
+AiPlayerbot.LLMTemperature = 0.8
+AiPlayerbot.LLMSystemPrompt = "You are a World of Warcraft character. You are helpful, terse, in-character, stay in lore, 1-2 sentences, max 200 characters. Never mention you are AI."
+AiPlayerbot.LLMHistorySize = 5
+AiPlayerbot.LLMFallbackText = "my brain hurts..."
+AiPlayerbot.LLMRateLimitPerBotMs = 5000
+AiPlayerbot.LLMMaxQueue = 100
+AiPlayerbot.LLMMaxResponseChars = 255
+AiPlayerbot.LLMEnabledForWhisper = 1
+AiPlayerbot.LLMEnabledForSay = 1
+```
 
-## Contributing
+Restart worldserver.
 
-This project is still under development. We encourage anyone to make contributions, anything from pull requests to reporting issues. If you encounter any errors or experience crashes, we encourage you [report them as GitHub issues](https://github.com/mod-playerbots/mod-playerbots/issues/new?template=bug_report.md). Your valuable feedback will help us improve this project collaboratively.
+## Usage
 
-If you make coding contributions, `mod-playerbots` complies with the [C++ Code Standards](https://www.azerothcore.org/wiki/cpp-code-standards) established by AzerothCore. Each Pull Request must include all test scenarios the author performed, along with their results, to demonstrate that the changes were properly verified.
+- **Whisper:** `/w <BotName> hello there` — bot replies via LLM (works even if bot is idle/off-zone)
+- **Say:** `/say hello everyone` near bots — bots in /say range reply (requires `LLMEnabledForSay=1`)
 
-We recommend joining the [Discord server](https://discord.gg/NQm5QShwf9) to make your contributions to the project easier, as a lot of active support is carried out through this server.
+First whisper after restart takes 10–30s (Ollama loads ~9.6GB model), subsequent replies are 1–3s.
 
-Please click on the "⭐" button to stay up to date and help us gain more visibility on GitHub!
+Check `Playerbots.log` / `worldserver.log`:
+```
+[Ollama] Initializing LLM: url=http://localhost:11434 ... timeout=60000ms
+[Ollama] 1234ms bot=Thoren reply='...' (model=gemma4:latest)
+```
 
-## Acknowledgements
+## How it works
 
-`mod-playerbots` is based on [ZhengPeiRu21/mod-playerbots](https://github.com/ZhengPeiRu21/mod-playerbots) and [celguar/mangosbot-bots](https://github.com/celguar/mangosbot-bots). We extend our gratitude to [@ZhengPeiRu21](https://github.com/ZhengPeiRu21) and [@celguar](https://github.com/celguar) for their continued efforts in maintaining the module.
+- `Player::Whisper` → `PlayerbotsPlayerScript::OnPlayerCanUseChat` (whisper) → `HandleCommand` + `ChatReplyAction::ChatReplyDo`
+- `WorldSession::SendPacket(SMSG_MESSAGECHAT)` → `OnPlayerbotPacketSent` → `PlayerbotAI::HandleBotOutgoingPacket` (say/yell/whisper) → `QueueChatResponse` → `ChatReplyDo`
+- `ChatReplyDo` checks blocklist (`noReplyMsgs`) and special handlers (LFG/WTB/thunderfury), then `OllamaChatService::ShouldUseLLM` / `IsRateLimited` → `EnqueueRequest` → worker thread `HttpPost` to Ollama → `ProcessCompleted` (world thread) → `ai->Whisper` / `ai->Say`
 
-Also, a thank you to the many contributors who've helped build this project:
+Rate limit is per-bot, stamped only on successful enqueue.
 
-<a href="https://github.com/mod-playerbots/mod-playerbots/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=mod-playerbots/mod-playerbots" />
-</a>
+## Troubleshooting
+
+- **No reply, no Ollama log:** check `LLMEnabled=1`, whisper a bot by exact name, ensure Ollama is up (`curl http://localhost:11434/api/tags`), check `etc/modules/playerbots.conf` under install prefix is the one edited (not just `wowserver/server/etc`).
+- **Fallback "my brain hurts...":** Ollama timeout or model not loaded — increase `LLMTimeoutMs` to 60000 for first load, ensure `ollama pull gemma4:latest` succeeded, check worker logs for `No response` / `Empty content`.
+- **Say floods:** set `LLMEnabledForSay=0` or keep `LLMRateLimitPerBotMs=5000` and `LLMMaxQueue=100`.
+- **Idle bots don't answer say:** say range (~25yd) is within `BotActiveAloneForceWhenInRadius=150` so say works; whispers bypass `AllowActivity` regardless of distance.
+
+## Security
+
+No API keys. Ollama is local. Do not commit `playerbots.conf` with secrets.
+
+## License
+
+Same as mod-playerbots / AzerothCore: AGPL-3.0. See `LICENSE`.

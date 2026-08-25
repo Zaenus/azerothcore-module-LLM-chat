@@ -11,6 +11,7 @@
 #include <string>
 
 #include "Event.h"
+#include "OllamaChatService.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 
@@ -215,6 +216,21 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32& type, uint32& guid1, std:
     {
         HandleThunderfuryReply(bot, chatChannelSource);
         return;
+    }
+
+    // LLM (Ollama) - whisper+say, gemma4 on GPU, N-history, 100% hit, fallback "my brain hurts..."
+    // Keep special handlers above (WTB/LFG/toxic/thunderfury) before LLM
+    if (sPlayerbotAIConfig.llmEnabled &&
+        (chatChannelSource == SRC_WHISPER || chatChannelSource == SRC_SAY) &&
+        ((chatChannelSource == SRC_WHISPER && sPlayerbotAIConfig.llmEnabledForWhisper) ||
+         (chatChannelSource == SRC_SAY && sPlayerbotAIConfig.llmEnabledForSay)))
+    {
+        bool shouldUse = sOllamaChatService.ShouldUseLLM(chatChannelSource);
+        if (shouldUse && !sOllamaChatService.IsRateLimited(bot->GetGUID()))
+        {
+            sOllamaChatService.EnqueueRequest(bot, type, guid1, msg, chanName, name);
+            return;
+        }
     }
 
     auto messageRepy = GenerateReplyMessage(bot, msg, guid1, name);

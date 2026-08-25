@@ -2226,6 +2226,25 @@ AiPlayerbot.GuildRepliesRate = 100
 # Bots without a master will say their lines
 AiPlayerbot.RandomBotSayWithoutMaster = 0
 
+# LLM (Ollama) - power whisper+say with gemma4 on GPU, N-history, fallback my brain hurts...
+# Requires Ollama running at LLMUrl with model pulled (e.g. ollama pull gemma4:latest)
+# Scope is whisper+say only, 100% hit rate, per-bot history LLMHistorySize
+AiPlayerbot.LLMEnabled = 0
+AiPlayerbot.LLMUrl = "http://localhost:11434"
+AiPlayerbot.LLMModel = "gemma4:latest"
+AiPlayerbot.LLMApi = "chat"
+AiPlayerbot.LLMTimeoutMs = 5000
+AiPlayerbot.LLMMaxTokens = 80
+AiPlayerbot.LLMTemperature = 0.8
+AiPlayerbot.LLMSystemPrompt = "You are a World of Warcraft character. You are helpful, terse, in-character, stay in lore, 1-2 sentences, max 200 characters. Never mention you are AI."
+AiPlayerbot.LLMHistorySize = 5
+AiPlayerbot.LLMFallbackText = "my brain hurts..."
+AiPlayerbot.LLMRateLimitPerBotMs = 5000
+AiPlayerbot.LLMMaxQueue = 100
+AiPlayerbot.LLMMaxResponseChars = 255
+AiPlayerbot.LLMEnabledForWhisper = 1
+AiPlayerbot.LLMEnabledForSay = 1
+
 #
 #
 ####################################################################################################
