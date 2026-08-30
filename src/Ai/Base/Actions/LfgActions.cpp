@@ -216,12 +216,6 @@ bool LfgAcceptAction::Execute(Event event)
         *packet << id << true;
         bot->GetSession()->QueuePacket(packet);
 
-        if (RandomPlayerbotMgr::instance().IsRandomBot(bot) && !bot->GetGroup())
-        {
-            RandomPlayerbotMgr::instance().Refresh(bot);
-            botAI->ResetStrategies();
-        }
-
         botAI->Reset();
         return true;
     }
@@ -250,12 +244,6 @@ bool LfgAcceptAction::Execute(Event event)
             WorldPacket* packet = new WorldPacket(CMSG_LFG_PROPOSAL_RESULT);
             *packet << id << true;
             bot->GetSession()->QueuePacket(packet);
-
-            if (RandomPlayerbotMgr::instance().IsRandomBot(bot) && !bot->GetGroup())
-            {
-                RandomPlayerbotMgr::instance().Refresh(bot);
-                botAI->ResetStrategies();
-            }
 
             botAI->Reset();
             return true;
@@ -293,6 +281,10 @@ bool LfgTeleportAction::Execute(Event event)
         p.rpos(0);
         p >> out;
     }
+
+    LOG_DEBUG("playerbots", "Bot {}: LfgTeleportAction out={} map={} state={}",
+              bot->GetGUID().ToString().c_str(), out, bot->GetMapId(),
+              sLFGMgr->GetState(bot->GetGUID()));
 
     bot->ClearUnitState(UNIT_STATE_ALL_STATE);
 

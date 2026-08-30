@@ -8,6 +8,8 @@
 #include <iostream>
 #include "BisListMgr.h"
 #include "Config.h"
+#include "Mgr/Ollama/OllamaChatService.h"
+#include "Mgr/Personality/PersonalityMgr.h"
 #include "NewRpgInfo.h"
 #include "PlayerbotDungeonRepository.h"
 #include "PlayerbotFactory.h"
@@ -387,6 +389,30 @@ bool PlayerbotAIConfig::Initialize()
     logValuesPerTick = sConfigMgr->GetOption<bool>("AiPlayerbot.LogValuesPerTick", false);
     fleeingEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.FleeingEnabled", true);
     summonAtInnkeepersEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.SummonAtInnkeepersEnabled", true);
+
+    // LLM (Ollama) - whisper/say/party/guild with gemma4, N-history, fallback, per-bot personality + forever memory
+    llmEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabled", false);
+    llmUrl = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMUrl", "http://localhost:11434");
+    llmModel = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMModel", "gemma4:latest");
+    llmApi = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMApi", "chat");
+    llmTimeoutMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMTimeoutMs", 60000);
+    llmMaxTokens = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMaxTokens", 80);
+    llmTemperature = sConfigMgr->GetOption<float>("AiPlayerbot.LLMTemperature", 0.8f);
+    llmSystemPrompt = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMSystemPrompt", "You are a World of Warcraft character. You are helpful, terse, in-character, stay in lore, 1-2 sentences, max 200 characters. Never mention you are AI.");
+    llmHistorySize = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMHistorySize", 5);
+    llmFallbackText = sConfigMgr->GetOption<std::string>("AiPlayerbot.LLMFallbackText", "my brain hurts...");
+    llmRateLimitPerBotMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMRateLimitPerBotMs", 5000);
+    llmMaxQueue = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMaxQueue", 100);
+    llmMaxResponseChars = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMaxResponseChars", 255);
+    llmEnabledForWhisper = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabledForWhisper", true);
+    llmEnabledForSay = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabledForSay", true);
+    llmEnabledForParty = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabledForParty", true);
+    llmEnabledForGuild = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMEnabledForGuild", true);
+    llmPersonalitiesEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMPersonalitiesEnabled", true);
+    llmMemoryEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.LLMMemoryEnabled", true);
+    llmMemoryPerPlayerLimit = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMemoryPerPlayerLimit", 500);
+    llmMemoryRetentionDays = sConfigMgr->GetOption<uint32>("AiPlayerbot.LLMMemoryRetentionDays", 0);
+
     randomBotMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.RandomBotMinLevel", 1);
     randomBotMaxLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.RandomBotMaxLevel", 80);
     if (randomBotMaxLevel > sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
@@ -748,6 +774,14 @@ bool PlayerbotAIConfig::Initialize()
     PlayerbotFactory::Init();
 
     AiObjectContext::BuildAllSharedContexts();
+
+    // LLM personalities (fast, just DB load)
+    if (llmPersonalitiesEnabled)
+    {
+        sPersonalityMgr.Load();
+        LOG_INFO("server.loading", "LLM personalities loaded");
+    }
+    // Note: Ollama initialization deferred to first OnUpdate to avoid blocking world startup
 
     if (sPlayerbotAIConfig.randomBotSuggestDungeons)
     {

@@ -10,9 +10,15 @@
 #include <regex>
 #include <string>
 
+#include "CharacterCache.h"
 #include "Event.h"
+#include "Mgr/Ollama/OllamaChatService.h"
+#include "ObjectGuid.h"
+#include "PlayerbotAIConfig.h"
+#include "PlayerbotMgr.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
+#include "SharedDefines.h"
 
 static const std::unordered_set<std::string> noReplyMsgs = {
     "join",
@@ -157,6 +163,7 @@ bool SayAction::isUseful()
 
 void ChatReplyAction::ChatReplyDo(Player* bot, uint32& type, uint32& guid1, std::string& msg, std::string& chanName, std::string& name)
 {
+    LOG_INFO("playerbots", "[LLMDBG] ChatReplyDo bot={} type={} from={} msg='{}' chan='{}'", bot->GetName(), type, name, msg, chanName);
     std::string respondsText = "";
 
     // if we're just commanding bots around, don't respond...
@@ -215,6 +222,29 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32& type, uint32& guid1, std:
     {
         HandleThunderfuryReply(bot, chatChannelSource);
         return;
+    }
+
+// LLM (Ollama) - whisper+say, gemma4 on GPU, N-history, 100% hit, fallback "my brain hurts..."
+    // Keep special handlers above (WTB/LFG/toxic/thunderfury) before LLM
+    if (sPlayerbotAIConfig.llmEnabled &&
+        (chatChannelSource == SRC_WHISPER || chatChannelSource == SRC_SAY) &&
+        ((chatChannelSource == SRC_WHISPER && sPlayerbotAIConfig.llmEnabledForWhisper) ||
+         (chatChannelSource == SRC_SAY && sPlayerbotAIConfig.llmEnabledForSay)))
+    {
+        // Only LLM for real players, not bot-to-bot
+        ObjectGuid senderGuid = ObjectGuid(HighGuid::Player, guid1);
+        Player* sender = ObjectAccessor::FindPlayer(senderGuid);
+        bool isFromBot = sender && sPlayerbotsMgr.GetPlayerbotAI(sender) != nullptr;
+        LOG_INFO("playerbots", "[LLMDBG] ChatReplyDo LLM check bot={} from={} isFromBot={} llmEnabled={} shouldUse={} rateLimited={}", bot->GetName(), name, isFromBot, sPlayerbotAIConfig.llmEnabled, sOllamaChatService.ShouldUseLLM(chatChannelSource), sOllamaChatService.IsRateLimited(bot->GetGUID()));
+        if (!isFromBot)
+        {
+            bool shouldUse = sOllamaChatService.ShouldUseLLM(chatChannelSource);
+            if (shouldUse && !sOllamaChatService.IsRateLimited(bot->GetGUID()))
+            {
+                sOllamaChatService.EnqueueRequest(bot, type, guid1, msg, chanName, name);
+                return;
+            }
+        }
     }
 
     auto messageRepy = GenerateReplyMessage(bot, msg, guid1, name);

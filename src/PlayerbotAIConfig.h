@@ -262,6 +262,30 @@ public:
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
     bool summonAtInnkeepersEnabled;
+
+    // LLM (Ollama) - whisper/say/party/guild, per-bot history, personality + forever memory
+    bool llmEnabled;
+    std::string llmUrl;
+    std::string llmModel;
+    std::string llmApi;
+    uint32 llmTimeoutMs;
+    uint32 llmMaxTokens;
+    float llmTemperature;
+    std::string llmSystemPrompt;
+    uint32 llmHistorySize;
+    std::string llmFallbackText;
+    uint32 llmRateLimitPerBotMs;
+    uint32 llmMaxQueue;
+    uint32 llmMaxResponseChars;
+    bool llmEnabledForWhisper;
+    bool llmEnabledForSay;
+    bool llmEnabledForParty;
+    bool llmEnabledForGuild;
+    bool llmPersonalitiesEnabled;
+    bool llmMemoryEnabled;
+    uint32 llmMemoryPerPlayerLimit;
+    uint32 llmMemoryRetentionDays;
+
     std::string combatStrategies, nonCombatStrategies;
     std::string randomBotCombatStrategies, randomBotNonCombatStrategies;
     bool applyInstanceStrategies;

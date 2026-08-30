@@ -18,6 +18,7 @@
 #include "CheckMountStateAction.h"
 #include "Common.h"
 #include "CreatureData.h"
+#include "Mgr/Ollama/OllamaChatService.h"
 #include "EmoteAction.h"
 #include "Engine.h"
 #include "EventProcessor.h"
@@ -139,6 +140,11 @@ PlayerbotAI::PlayerbotAI(Player* bot)
     if (!bot->isTaxiCheater() && HasCheat((BotCheatMask::taxi)))
         bot->SetTaxiCheater(true);
 
+    // Playerbots must be whisper-accepting by default so real players can click them and
+    // send whispers without the client/server whisper filter blocking the interaction before
+    // the bot chat pipeline can process it.
+    bot->SetAcceptWhispers(true);
+
     for (uint8 i = 0; i < MAX_ACTIVITY_TYPE; i++)
     {
         allowActiveCheckTimer[i] = 0;
@@ -200,6 +206,8 @@ PlayerbotAI::PlayerbotAI(Player* bot)
     botOutgoingPacketHandlers.AddHandler(SMSG_LFG_PROPOSAL_UPDATE, "lfg proposal");
     botOutgoingPacketHandlers.AddHandler(SMSG_TEXT_EMOTE, "receive text emote");
     botOutgoingPacketHandlers.AddHandler(SMSG_EMOTE, "receive emote");
+    botOutgoingPacketHandlers.AddHandler(SMSG_MESSAGECHAT, "receive chat message");
+    botOutgoingPacketHandlers.AddHandler(SMSG_GM_MESSAGECHAT, "receive gm chat message");
     botOutgoingPacketHandlers.AddHandler(SMSG_LOOT_START_ROLL, "master loot roll");
     botOutgoingPacketHandlers.AddHandler(SMSG_ARENA_TEAM_INVITE, "arena team invite");
     botOutgoingPacketHandlers.AddHandler(SMSG_GROUP_DESTROYED, "group destroyed");
@@ -249,6 +257,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (!bot || !bot->GetSession() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
         bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
         return;
+
+    if (!bot->isAcceptWhispers())
+    {
+        LOG_INFO("playerbots", "[LLMDBG] restoring bot whisper acceptance for {}", bot->GetName());
+        bot->SetAcceptWhispers(true);
+    }
 
     // Handle cheat options (set bot health and power if cheats are enabled)
     if (bot->IsAlive() &&
@@ -1161,14 +1175,9 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
 
             return;
         }
-        case SMSG_MESSAGECHAT:  // do not react to self or if not ready to reply
+        case SMSG_MESSAGECHAT:
+        case SMSG_GM_MESSAGECHAT:  // do not react to self or if not ready to reply
         {
-            if (!sPlayerbotAIConfig.randomBotTalk)
-                return;
-
-            if (!AllowActivity())
-                return;
-
             WorldPacket p(packet);
             if (!p.empty() && (p.GetOpcode() == SMSG_MESSAGECHAT || p.GetOpcode() == SMSG_GM_MESSAGECHAT))
             {
@@ -1186,13 +1195,9 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
                     return;
 
                 if (lang == LANG_ADDON)
-                        return;
+                    return;
 
-                if (p.GetOpcode() == SMSG_GM_MESSAGECHAT)
-                {
-                    p >> textLen;
-                    p >> name;
-                }
+                bool isGMMessage = (p.GetOpcode() == SMSG_GM_MESSAGECHAT);
 
                 switch (msgtype)
                 {
@@ -1204,6 +1209,12 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
                     case CHAT_MSG_YELL:
                     case CHAT_MSG_WHISPER:
                     case CHAT_MSG_GUILD:
+                        if (isGMMessage)
+                        {
+                            // GM messages have senderName before receiverGUID
+                            p >> textLen;
+                            p >> name;
+                        }
                         p >> guid2;
                         p >> textLen >> message >> chatTag;
                         break;
@@ -1217,59 +1228,94 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
                 // do not reply to self but always try to reply to real player
                 if (guid1 != bot->GetGUID())
                 {
+                    if (msgtype == CHAT_MSG_WHISPER)
+                    {
+                        LOG_INFO("playerbots", "[LLMDBG] whisper packet reached bot={} target={} sender={} msg='{}'", bot->GetName(), bot->GetGUID().ToString(), guid1.ToString(), message.substr(0, 120));
+                    }
+
+                    LOG_INFO("playerbots", "[LLMDBG] HandleBotOutgoingPacket bot={} type={} from={} msg='{}' chan='{}'", bot->GetName(), uint32(msgtype), guid1.ToString(), message.substr(0, 60), chanName);
+
+                    // LLM: bypass randomBotTalk and AllowActivity for whisper/say/party/guild when LLM enabled (100% hit)
+                    {
+                        bool isLLMForBypass = sPlayerbotAIConfig.llmEnabled &&
+                            ((msgtype == CHAT_MSG_WHISPER && sPlayerbotAIConfig.llmEnabledForWhisper) ||
+                             (msgtype == CHAT_MSG_SAY && sPlayerbotAIConfig.llmEnabledForSay) ||
+                             (msgtype == CHAT_MSG_PARTY && sPlayerbotAIConfig.llmEnabledForParty) ||
+                             (msgtype == CHAT_MSG_GUILD && sPlayerbotAIConfig.llmEnabledForGuild));
+                        if (!sPlayerbotAIConfig.randomBotTalk && !isLLMForBypass)
+                            return;
+                        if (!AllowActivity() && !isLLMForBypass)
+                            return;
+                    }
+
+                    sCharacterCache->GetCharacterNameByGuid(guid1, name);
+                    uint32 senderAccountId = sCharacterCache->GetCharacterAccountIdByGuid(guid1);
+                    bool isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(senderAccountId);
+                    bool isMentioned = message.find(bot->GetName()) != std::string::npos;
                     time_t lastChat = GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Get();
                     bool isPaused = time(0) < lastChat;
-                    bool isFromFreeBot = false;
-                    sCharacterCache->GetCharacterNameByGuid(guid1, name);
-                    uint32 accountId = sCharacterCache->GetCharacterAccountIdByGuid(guid1);
-                    isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
-                    bool isMentioned = message.find(bot->GetName()) != std::string::npos;
 
-                    // ChatChannelSource chatChannelSource = GetChatChannelSource(bot, msgtype, chanName);
-
-                    // random bot speaks, chat CD
                     if (isFromFreeBot && isPaused)
                         return;
 
-                    // BG: react only if mentioned or if not channel and real player spoke
                     if (bot->InBattleground() && !(isMentioned || (msgtype != CHAT_MSG_CHANNEL && !isFromFreeBot)))
                         return;
 
+                    // Master check - allow LLM whispers/say even with master
+                    bool isLLMChannel = sPlayerbotAIConfig.llmEnabled && !isFromFreeBot &&
+                        ((msgtype == CHAT_MSG_WHISPER && sPlayerbotAIConfig.llmEnabledForWhisper) ||
+                         (msgtype == CHAT_MSG_SAY && sPlayerbotAIConfig.llmEnabledForSay) ||
+                         (msgtype == CHAT_MSG_PARTY && sPlayerbotAIConfig.llmEnabledForParty) ||
+                         (msgtype == CHAT_MSG_GUILD && sPlayerbotAIConfig.llmEnabledForGuild));
+
                     if (HasRealPlayerMaster() && guid1 != GetMaster()->GetGUID())
-                        return;
-
-                    auto itemIds = GetChatHelper()->ExtractAllItemIds(message);
-                    if (message.starts_with(sPlayerbotAIConfig.toxicLinksPrefix) &&
-                        (itemIds.size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0) &&
-                        sPlayerbotAIConfig.toxicLinksRepliesChance)
                     {
-                        if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
+                        bool allowNonMasterReply = !isFromFreeBot &&
+                            (msgtype == CHAT_MSG_WHISPER || msgtype == CHAT_MSG_SAY ||
+                             msgtype == CHAT_MSG_PARTY || msgtype == CHAT_MSG_GUILD ||
+                             sPlayerbotAIConfig.randomBotTalk);
+                        if (!allowNonMasterReply && !isLLMChannel)
+                            return;
+                        if (isFromFreeBot)
                             return;
                     }
-                    else if (itemIds.count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance)
-                    {
-                        if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
-                            return;
-                    }
-                    else
-                    {
-                        if (isFromFreeBot && urand(0, 20))
-                            return;
 
-                        // if (msgtype == CHAT_MSG_GUILD && (!sPlayerbotAIConfig.guildRepliesRate || urand(1, 100) >=
-                        // sPlayerbotAIConfig.guildRepliesRate)) return;
-
-                        if (!isFromFreeBot)
+                    // Throttle General/Channel spam for non-LLM
+                    if (!isLLMChannel)
+                    {
+                        auto itemIds = GetChatHelper()->ExtractAllItemIds(message);
+                        if (message.starts_with(sPlayerbotAIConfig.toxicLinksPrefix) &&
+                            (itemIds.size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0) &&
+                            sPlayerbotAIConfig.toxicLinksRepliesChance)
                         {
-                            if (!isMentioned && urand(0, 4))
+                            if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
+                                return;
+                        }
+                        else if (itemIds.count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance)
+                        {
+                            if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
                                 return;
                         }
                         else
                         {
-                            if (urand(0, 20 + 10 * isMentioned))
+                            if (isFromFreeBot && urand(0, 20))
                                 return;
+                            if (!isFromFreeBot)
+                            {
+                                if (!isMentioned && urand(0, 4))
+                                    return;
+                            }
+                            else
+                            {
+                                if (urand(0, 20 + 10 * isMentioned))
+                                    return;
+                            }
                         }
                     }
+
+                    LOG_INFO("playerbots", "[LLMDBG] queueing reply bot={} sender={} msgType={} isLLM={} isMentioned={} isFromFreeBot={} hasMaster={} channel='{}' text='{}'",
+                        bot->GetName(), guid1.ToString(), uint32(msgtype), isLLMChannel, isMentioned, isFromFreeBot,
+                        HasRealPlayerMaster(), chanName, message.substr(0, 120));
 
                     QueueChatResponse(ChatQueuedReply{msgtype, guid1.GetCounter(), guid2.GetCounter(), message,
                                                       chanName, name,
@@ -5197,7 +5243,41 @@ void PlayerbotAI::_fillGearScoreData(Player* player, Item* item, std::vector<uin
 
 std::string const PlayerbotAI::HandleRemoteCommand(std::string const command)
 {
-    if (command == "state")
+    if (command.rfind("llmtest ", 0) == 0)
+    {
+        std::string msg = command.substr(8);
+        if (msg.empty())
+            msg = "hello";
+        // Enqueue fake say from TestPlayer to test LLM pipeline (say doesn't need receiver)
+        sOllamaChatService.EnqueueRequest(bot, CHAT_MSG_SAY, 99999, msg, "", "TestPlayer");
+        return "llmtest enqueued";
+    }
+    else if (command.rfind("llmtestwhisper ", 0) == 0)
+    {
+        std::string msg = command.substr(15);
+        if (msg.empty())
+            msg = "hello whisper";
+        // Use a real online bot as sender for whisper test (Thitki guid 1)
+        sOllamaChatService.EnqueueRequest(bot, CHAT_MSG_WHISPER, 1, msg, "", "Thitki");
+        return "llmtestwhisper enqueued";
+    }
+    else if (command.rfind("llmtestparty ", 0) == 0)
+    {
+        std::string msg = command.substr(14);
+        if (msg.empty())
+            msg = "hello party";
+        sOllamaChatService.EnqueueRequest(bot, CHAT_MSG_PARTY, 1, msg, "", "Thitki");
+        return "llmtestparty enqueued";
+    }
+    else if (command.rfind("llmtestguild ", 0) == 0)
+    {
+        std::string msg = command.substr(14);
+        if (msg.empty())
+            msg = "hello guild";
+        sOllamaChatService.EnqueueRequest(bot, CHAT_MSG_GUILD, 1, msg, "", "Thitki");
+        return "llmtestguild enqueued";
+    }
+    else if (command == "state")
     {
         switch (currentState)
         {

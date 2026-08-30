@@ -1456,7 +1456,10 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
     if (bot->InBattlegroundQueue())
         return false;
 
-     uint32 botId = bot->GetGUID().GetCounter();
+    if (sLFGMgr->GetState(bot->GetGUID()) > lfg::LFG_STATE_QUEUED)
+        return false;
+
+     uint32 botId = bot->GetGUID().GetCounter();;
 
     // if death revive
     if (bot->isDead())
@@ -1969,7 +1972,7 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
     // teleport to a random inn for bot level
     botAI->Reset(true);
 
-    if (bot->GetGroup())
+    if (bot->GetGroup() && !bot->GetGroup()->isLFGGroup())
         botAI->LeaveOrDisbandGroup();
 
     if (pmo)
@@ -2010,7 +2013,7 @@ void RandomPlayerbotMgr::RandomizeMin(Player* bot)
     // teleport to a random inn for bot level
     botAI->Reset(true);
 
-    if (bot->GetGroup())
+    if (bot->GetGroup() && !bot->GetGroup()->isLFGGroup())
         botAI->LeaveOrDisbandGroup();
 
     if (pmo)
@@ -2092,7 +2095,7 @@ void RandomPlayerbotMgr::Refresh(Player* bot)
     uint32 money = bot->GetMoney();
     bot->SetMoney(money + 500 * sqrt(urand(1, bot->GetLevel() * 5)));
 
-    if (bot->GetGroup())
+    if (bot->GetGroup() && !bot->GetGroup()->isLFGGroup())
         botAI->LeaveOrDisbandGroup();
 
     if (pmo)

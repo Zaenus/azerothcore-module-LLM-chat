@@ -11,6 +11,7 @@
 #include "DatabaseEnv.h"
 #include "DatabaseLoader.h"
 #include "GuildTaskMgr.h"
+#include "Mgr/Ollama/OllamaChatService.h"
 #include "PlayerScript.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotGuildMgr.h"
@@ -366,8 +367,17 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        static bool ollamaInitialized = false;
+        if (sPlayerbotAIConfig.llmEnabled && !ollamaInitialized)
+        {
+            sOllamaChatService.Initialize();
+            ollamaInitialized = true;
+        }
+
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
+        if (sPlayerbotAIConfig.llmEnabled)
+            sOllamaChatService.ProcessCompleted();
     }
 };
 
