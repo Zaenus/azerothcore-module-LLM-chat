@@ -2383,3 +2383,30 @@ AiPlayerbot.TargetPosRecalcDistance = 0.1
 
 # Allow bots to be summoned near innkeepers
 AiPlayerbot.SummonAtInnkeepersEnabled = 1
+
+#
+# LLM (Ollama) - whisper/say/party/guild with gemma4, N-history, fallback, per-bot personality + forever memory
+# Requires Ollama running at LLMUrl with model pulled (e.g. ollama pull gemma4:latest)
+# Scope: whisper/say/party/guild 100% hit rate, per-bot history LLMHistorySize, per-bot+per-player forever memory
+#
+AiPlayerbot.LLMEnabled = 0
+AiPlayerbot.LLMUrl = "http://localhost:11434"
+AiPlayerbot.LLMModel = "gemma4:latest"
+AiPlayerbot.LLMApi = "chat"
+AiPlayerbot.LLMTimeoutMs = 60000
+AiPlayerbot.LLMMaxTokens = 80
+AiPlayerbot.LLMTemperature = 0.8
+AiPlayerbot.LLMSystemPrompt = "You are a World of Warcraft character. You are helpful, terse, in-character, stay in lore, 1-2 sentences, max 200 characters. Never mention you are AI."
+AiPlayerbot.LLMHistorySize = 5
+AiPlayerbot.LLMFallbackText = "my brain hurts..."
+AiPlayerbot.LLMRateLimitPerBotMs = 5000
+AiPlayerbot.LLMMaxQueue = 200
+AiPlayerbot.LLMMaxResponseChars = 255
+AiPlayerbot.LLMEnabledForWhisper = 1
+AiPlayerbot.LLMEnabledForSay = 1
+AiPlayerbot.LLMEnabledForParty = 1
+AiPlayerbot.LLMEnabledForGuild = 1
+AiPlayerbot.LLMPersonalitiesEnabled = 1
+AiPlayerbot.LLMMemoryEnabled = 1
+AiPlayerbot.LLMMemoryPerPlayerLimit = 500
+AiPlayerbot.LLMMemoryRetentionDays = 0

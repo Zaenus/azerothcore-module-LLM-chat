@@ -11,6 +11,7 @@
 #include "DatabaseEnv.h"
 #include "DatabaseLoader.h"
 #include "GuildTaskMgr.h"
+#include "Mgr/Ollama/OllamaChatService.h"
 #include "PlayerScript.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotGuildMgr.h"
@@ -21,8 +22,6 @@
 #include "PlayerbotCommandScript.h"
 #include "cmath"
 #include "BattleGroundTactics.h"
-#include "OllamaChatService.h"
-#include "SayAction.h"
 
 class PlayerbotsDatabaseScript : public DatabaseScript
 {
@@ -193,16 +192,6 @@ public:
         if (msg == "logout")
             return false;
 
-        if (sPlayerbotAIConfig.llmEnabled && sPlayerbotAIConfig.llmEnabledForWhisper)
-        {
-            uint32 t = type;
-            uint32 g = player->GetGUID().GetCounter();
-            std::string m = msg;
-            std::string cn;
-            std::string n = player->GetName();
-            ChatReplyAction::ChatReplyDo(receiver, t, g, m, cn, n);
-        }
-
         return true;
     }
 
@@ -341,8 +330,7 @@ class PlayerbotsWorldScript : public WorldScript
 public:
     PlayerbotsWorldScript() : WorldScript("PlayerbotsWorldScript", {
         WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED,
-        WORLDHOOK_ON_UPDATE,
-        WORLDHOOK_ON_SHUTDOWN
+        WORLDHOOK_ON_UPDATE
     }) {}
 
     void OnBeforeWorldInitialized() override
@@ -372,11 +360,6 @@ public:
         LOG_INFO("server.loading", ">> Loaded playerbots config in {} ms", GetMSTimeDiffToNow(oldMSTime));
         LOG_INFO("server.loading", " ");
 
-        if (sPlayerbotAIConfig.llmEnabled)
-        {
-            sOllamaChatService.Initialize();
-        }
-
         PlayerbotSpellRepository::Instance().Initialize();
 
         LOG_INFO("server.loading", "Playerbots World Thread Processor initialized");
@@ -384,14 +367,17 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        static bool ollamaInitialized = false;
+        if (sPlayerbotAIConfig.llmEnabled && !ollamaInitialized)
+        {
+            sOllamaChatService.Initialize();
+            ollamaInitialized = true;
+        }
+
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
-        sOllamaChatService.ProcessCompleted();
-    }
-
-    void OnShutdown() override
-    {
-        sOllamaChatService.Shutdown();
+        if (sPlayerbotAIConfig.llmEnabled)
+            sOllamaChatService.ProcessCompleted();
     }
 };
 
